@@ -1,8 +1,3 @@
-// =========================================================
-// TRABALHO DE LINGUAGEM C: Sistema de Loja com Arquivos e Bubble Sort
-// VERSAO COMENTADA LINHA A LINHA
-// =========================================================
-
 #include <stdio.h>      // Biblioteca de entrada/saida: printf, fgets, fopen, fprintf, fscanf, etc.
 #include <stdlib.h>     // Biblioteca padrao: atoi, atof (converter texto em numero)
 #include <string.h>     // Biblioteca de textos: strlen, strcpy, strcspn, strstr
