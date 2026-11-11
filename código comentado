@@ -1,0 +1,615 @@
+// =========================================================
+// TRABALHO DE LINGUAGEM C: Sistema de Loja com Arquivos e Bubble Sort
+// VERSAO COMENTADA LINHA A LINHA
+// =========================================================
+
+#include <stdio.h>      // Biblioteca de entrada/saida: printf, fgets, fopen, fprintf, fscanf, etc.
+#include <stdlib.h>     // Biblioteca padrao: atoi, atof (converter texto em numero)
+#include <string.h>     // Biblioteca de textos: strlen, strcpy, strcspn, strstr
+#include <ctype.h>      // Biblioteca de caracteres: tolower
+
+#define MAX 100         // Define a constante MAX: limite maximo de registros em cada vetor na memoria
+
+// Estrutura para representar os Produtos
+typedef struct {                // Inicia a definicao de uma struct com apelido (typedef)
+    int id;                     // Identificador unico do produto
+    char nome[50];              // Nome do produto (ate 49 caracteres + '\0')
+    char categoria[30];         // Categoria do produto (ate 29 caracteres + '\0')
+    float preco;                // Preco unitario do produto
+    int quantidade;             // Estoque atual do produto
+    char fornecedor[40];        // Nome do fornecedor (ate 39 caracteres + '\0')
+} Produto;                      // Fim da struct: agora podemos usar "Produto" como tipo
+
+// Estrutura para representar os Clientes
+typedef struct {                // Inicia a struct de cliente
+    int id;                     // Identificador unico do cliente
+    char nome[50];              // Nome do cliente
+    char telefone[20];          // Telefone do cliente (guardado como texto)
+} Cliente;                      // Fim da struct: tipo "Cliente"
+
+// Estrutura para representar o Historico de Compras
+typedef struct {                // Inicia a struct de compra
+    int id;                     // Identificador unico da compra
+    char cliente[50];           // Salvamos o NOME (nao o ID) para nao perder o historico se o cliente for apagado
+    char produto[50];           // Nome do produto comprado (mesmo motivo acima)
+    int quantidade;             // Quantidade de unidades compradas
+    float total;                // Valor total da compra (quantidade * preco)
+} Compra;                       // Fim da struct: tipo "Compra"
+
+// ---------------------------------------------------------
+// FUNCOES AUXILIARES DE LEITURA E TRATAMENTO
+// ---------------------------------------------------------
+
+// Le um texto do teclado com seguranca (substitui o scanf de strings)
+void lerTexto(char *texto, int tam) {   // Recebe o endereco do vetor de char e o tamanho maximo
+    int i;                              // Contador usado no laco que percorre o texto
+    fgets(texto, tam, stdin);           // Le a linha inteira do teclado, sem estourar o tamanho
+    texto[strcspn(texto, "\n")] = '\0'; // Acha a posicao do '\n' e troca por '\0' (remove a quebra de linha)
+
+    // O ponto e virgula (;) e o nosso delimitador nos arquivos txt, entao evitamos conflito
+    for (i = 0; texto[i] != '\0'; i++) {    // Percorre cada caractere ate o fim do texto
+        if (texto[i] == ';') {              // Se o caractere atual for ponto e virgula...
+            texto[i] = ' ';                 // ...troca por espaco para nao quebrar o formato do arquivo
+        }                                   // Fim do if
+    }                                       // Fim do for
+}                                           // Fim da funcao lerTexto
+
+// Le um numero inteiro de forma segura convertendo de string
+int lerInt() {                      // Funcao sem parametros que devolve um inteiro
+    char buffer[50] = "0";          // Vetor temporario iniciado com "0" (valor padrao se nada for lido)
+    fgets(buffer, 50, stdin);       // Le a linha digitada como texto
+    return atoi(buffer);            // Converte o texto para int e devolve (atoi retorna 0 se for invalido)
+}                                   // Fim da funcao lerInt
+
+// Le um numero real aceitando virgula ou ponto
+float lerFloat() {                  // Funcao que devolve um numero decimal
+    char buffer[50] = "0";          // Vetor temporario iniciado com "0"
+    int i;                          // Contador para percorrer o texto
+    fgets(buffer, 50, stdin);       // Le a linha digitada como texto
+    for (i = 0; buffer[i] != '\0'; i++) {   // Percorre cada caractere do texto
+        if (buffer[i] == ',') {             // Se encontrar uma virgula...
+            buffer[i] = '.';                // ...troca por ponto: padroniza virgula para ponto (padrao float em C)
+        }                                   // Fim do if
+    }                                       // Fim do for
+    return atof(buffer);            // Converte o texto para float e devolve
+}                                   // Fim da funcao lerFloat
+
+// Converte caractere para minusculo (evitando problemas com acentos via cast)
+char minus(char c) {                    // Recebe um caractere e devolve outro
+    return tolower((unsigned char)c);   // Converte para minusculo; o cast evita comportamento indefinido com acentos
+}                                       // Fim da funcao minus
+
+// Compara dois textos ignorando maiusculas e minusculas (Retorna 0 se iguais)
+int comparar(char *a, char *b) {        // Recebe dois textos a comparar
+    int i = 0;                          // Posicao atual da comparacao, comeca no inicio
+    while (a[i] != '\0' && minus(a[i]) == minus(b[i])) {    // Enquanto 'a' nao acabou e os caracteres (minusculos) forem iguais
+        i++;                            // Avanca para o proximo caractere
+    }                                   // Fim do while: parou na primeira diferenca ou no fim de 'a'
+    return minus(a[i]) - minus(b[i]);   // Devolve a diferenca: 0 = iguais, >0 = a vem depois, <0 = a vem antes
+}                                       // Fim da funcao comparar
+
+// Verifica se um pedaco de texto esta dentro de outro (Case-insensitive)
+int contem(char *texto, char *pedaco) {     // Recebe o texto completo e o trecho procurado
+    char t[50], p[50];                      // Copias temporarias em minusculo
+    int i;                                  // Contador dos lacos
+    for (i = 0; texto[i] != '\0'; i++) t[i] = minus(texto[i]);  // Copia o texto inteiro convertendo para minusculo
+    t[i] = '\0';                            // Coloca o terminador de string no fim da copia
+    for (i = 0; pedaco[i] != '\0'; i++) p[i] = minus(pedaco[i]);    // Copia o trecho convertendo para minusculo
+    p[i] = '\0';                            // Coloca o terminador de string no fim da copia
+    return strstr(t, p) != NULL;            // strstr busca substring: 1 se encontrou, 0 se nao
+}                                           // Fim da funcao contem
+
+// ---------------------------------------------------------
+// MANIPULACAO DE ARQUIVOS (PERSISTENCIA DE DADOS)
+// ---------------------------------------------------------
+
+// Carrega os dados do produtos.txt para o vetor na memoria
+int carregarProdutos(Produto *v) {              // Recebe o vetor onde os produtos serao guardados
+    FILE *arq = fopen("produtos.txt", "r");     // Abre o arquivo para leitura ("r")
+    int n = 0;                                  // Contador de produtos lidos
+    if (arq == NULL) {                          // Se o arquivo nao abriu...
+        return 0;                               // ...ele ainda nao existe: devolve 0 produtos
+    }                                           // Fim do if
+    // Le linha por linha usando mascara de formato especifica para arquivos txt estruturados
+    while (n < MAX && fscanf(arq, "%d;%49[^;];%29[^;];%f;%d;%39[^\n]\n", &v[n].id, v[n].nome,   // Enquanto couber no vetor, le id, nome (ate ';'), categoria...
+                           v[n].categoria, &v[n].preco, &v[n].quantidade, v[n].fornecedor) == 6) {  // ...preco, quantidade e fornecedor; so continua se leu os 6 campos
+        n++;                                    // Conta mais um produto lido
+    }                                           // Fim do while
+    fclose(arq);                                // Fecha o arquivo
+    return n;                                   // Devolve quantos produtos foram carregados
+}                                               // Fim da funcao carregarProdutos
+
+// Tecnica de seguranca: Regrava produtos.txt usando um arquivo temporario
+void salvarProdutos(Produto *v, int n) {        // Recebe o vetor e quantos produtos ele tem
+    FILE *temp = fopen("temp.txt", "w");        // Cria/abre um arquivo temporario para escrita
+    int i;                                      // Contador do laco
+    if (temp == NULL) {                         // Se nao conseguiu criar o temporario...
+        printf("Erro ao criar arquivo temporario!\n");  // ...avisa o usuario
+        return;                                 // ...e sai da funcao sem mexer no arquivo original
+    }                                           // Fim do if
+    for (i = 0; i < n; i++) {                   // Percorre todos os produtos do vetor
+        fprintf(temp, "%d;%s;%s;%.2f;%d;%s\n", v[i].id, v[i].nome, v[i].categoria,  // Escreve uma linha por produto, campos separados por ';'
+                v[i].preco, v[i].quantidade, v[i].fornecedor);  // Preco com 2 casas decimais
+    }                                           // Fim do for
+    fclose(temp);                               // Fecha o temporario (garante que tudo foi gravado)
+    remove("produtos.txt");                     // Apaga o arquivo original corrompido ou desatualizado
+    rename("temp.txt", "produtos.txt");         // Renomeia o temporario para se tornar o oficial
+}                                               // Fim da funcao salvarProdutos
+
+// Carrega os dados de clientes.txt
+int carregarClientes(Cliente *v) {              // Recebe o vetor onde os clientes serao guardados
+    FILE *arq = fopen("clientes.txt", "r");     // Abre o arquivo de clientes para leitura
+    int n = 0;                                  // Contador de clientes lidos
+    if (arq == NULL) {                          // Se o arquivo nao existe...
+        return 0;                               // ...devolve 0 clientes
+    }                                           // Fim do if
+    while (n < MAX && fscanf(arq, "%d;%49[^;];%19[^\n]\n", &v[n].id, v[n].nome, v[n].telefone) == 3) {  // Le id, nome e telefone; continua enquanto leu os 3 campos
+        n++;                                    // Conta mais um cliente
+    }                                           // Fim do while
+    fclose(arq);                                // Fecha o arquivo
+    return n;                                   // Devolve quantos clientes foram carregados
+}                                               // Fim da funcao carregarClientes
+
+// Carrega os dados de historico.txt
+int carregarCompras(Compra *v) {                // Recebe o vetor onde as compras serao guardadas
+    FILE *arq = fopen("historico.txt", "r");    // Abre o arquivo de historico para leitura
+    int n = 0;                                  // Contador de compras lidas
+    if (arq == NULL) {                          // Se o arquivo nao existe...
+        return 0;                               // ...devolve 0 compras
+    }                                           // Fim do if
+    while (n < MAX && fscanf(arq, "%d;%49[^;];%49[^;];%d;%f\n", &v[n].id, v[n].cliente,     // Le id, nome do cliente...
+                           v[n].produto, &v[n].quantidade, &v[n].total) == 5) {             // ...nome do produto, quantidade e total; so continua se leu os 5 campos
+        n++;                                    // Conta mais uma compra
+    }                                           // Fim do while
+    fclose(arq);                                // Fecha o arquivo
+    return n;                                   // Devolve quantas compras foram carregadas
+}                                               // Fim da funcao carregarCompras
+
+// Cria os 3 arquivos principais vazios (Zera a base de dados se confirmado)
+void criarArquivos() {                          // Funcao do menu opcao 1
+    FILE *arq;                                  // Ponteiro de arquivo reutilizado para os 3 arquivos
+    char resp[10];                              // Guarda a resposta s/n do usuario
+
+    printf("Isso apaga tudo que ja existe. Continuar? (s/n): ");     // Pede confirmacao porque os dados serao apagados
+    lerTexto(resp, 10);                         // Le a resposta do teclado
+    if (minus(resp[0]) != 's') {                // Se a primeira letra (em minusculo) nao for 's'...
+        printf("Cancelado.\n");                 // ...avisa que foi cancelado
+        return;                                 // ...e sai sem apagar nada
+    }                                           // Fim do if
+    arq = fopen("produtos.txt", "w");           // Modo "w" limpa ou cria arquivo vazio
+    if (arq != NULL) fclose(arq);               // Se abriu, fecha logo em seguida (o arquivo fica vazio)
+    arq = fopen("clientes.txt", "w");           // Mesmo processo para clientes.txt
+    if (arq != NULL) fclose(arq);               // Fecha o arquivo de clientes
+    arq = fopen("historico.txt", "w");          // Mesmo processo para historico.txt
+    if (arq != NULL) fclose(arq);               // Fecha o arquivo de historico
+    printf("Arquivos criados com sucesso!\n");  // Informa que terminou
+}                                               // Fim da funcao criarArquivos
+
+// ---------------------------------------------------------
+// FUNCOES DE PRODUTOS
+// ---------------------------------------------------------
+
+int acharProduto(Produto *v, int n, int id) {   // Procura um produto pelo ID no vetor
+    int i;                                      // Contador do laco
+    for (i = 0; i < n; i++) {                   // Percorre todos os produtos
+        if (v[i].id == id) {                    // Se o ID do produto atual for o procurado...
+            return i;                           // Retorna o indice no vetor
+        }                                       // Fim do if
+    }                                           // Fim do for
+    return -1;                                  // Nao encontrado: devolve -1
+}                                               // Fim da funcao acharProduto
+
+void cabecalhoProdutos() {                      // Imprime o cabecalho da tabela de produtos
+    printf("\n%-5s %-25s %-18s %10s %6s  %-15s\n", "ID", "NOME", "CATEGORIA", "PRECO", "QTD", "FORNECEDOR");  // Titulos das colunas com larguras fixas (- = alinhado a esquerda)
+    printf("-------------------------------------------------------------------------------------\n");     // Linha separadora
+}                                               // Fim da funcao cabecalhoProdutos
+
+void linhaProduto(Produto *p) {                 // Imprime uma linha da tabela para um produto
+    printf("%-5d %-25.25s %-18.18s %10.2f %6d  %-15.15s\n", p->id, p->nome, p->categoria,   // Mostra id, nome e categoria (".25" corta textos maiores que a coluna)
+           p->preco, p->quantidade, p->fornecedor);     // Mostra preco com 2 casas, quantidade e fornecedor
+}                                               // Fim da funcao linhaProduto
+
+void mostrarProdutos(Produto *v, int n) {       // Mostra a tabela completa de produtos
+    int i;                                      // Contador do laco
+    cabecalhoProdutos();                        // Imprime o cabecalho da tabela
+    for (i = 0; i < n; i++) {                   // Percorre todos os produtos
+        linhaProduto(&v[i]);                    // Imprime uma linha passando o endereco do produto
+    }                                           // Fim do for
+    printf("\nTotal: %d produto(s)\n", n);      // Mostra o total de produtos listados
+}                                               // Fim da funcao mostrarProdutos
+
+void inserirProduto() {                         // Funcao do menu opcao 2
+    Produto v[MAX], novo;                       // Vetor com os produtos existentes e a variavel do novo produto
+    int n = carregarProdutos(v), i, maior = 0;  // n = quantos ja existem; i = contador; maior = maior ID encontrado
+    FILE *arq;                                  // Ponteiro para o arquivo
+
+    if (n >= MAX) {                             // Se o vetor ja esta cheio...
+        printf("Limite de produtos atingido!\n");   // ...avisa o usuario
+        return;                                 // ...e cancela o cadastro
+    }                                           // Fim do if
+    printf("Nome: ");                           // Pede o nome
+    lerTexto(novo.nome, 50);                    // Le o nome do teclado
+    printf("Categoria: ");                      // Pede a categoria
+    lerTexto(novo.categoria, 30);               // Le a categoria do teclado
+    if (strlen(novo.nome) == 0 || strlen(novo.categoria) == 0) {    // Se nome OU categoria estiverem vazios...
+        printf("Nome e categoria nao podem ficar vazios!\n");       // ...avisa o erro
+        return;                                 // ...e cancela
+    }                                           // Fim do if
+    printf("Preco: ");                          // Pede o preco
+    novo.preco = lerFloat();                    // Le o preco (aceita virgula ou ponto)
+    printf("Quantidade: ");                     // Pede a quantidade em estoque
+    novo.quantidade = lerInt();                 // Le a quantidade
+    printf("Fornecedor: ");                     // Pede o fornecedor
+    lerTexto(novo.fornecedor, 40);              // Le o fornecedor
+    if (strlen(novo.fornecedor) == 0) {         // Se o fornecedor estiver vazio...
+        printf("Fornecedor nao pode ficar vazio!\n");   // ...avisa o erro
+        return;                                 // ...e cancela
+    }                                           // Fim do if
+
+    // Valida duplicidade e calcula ID sequencial automatico
+    for (i = 0; i < n; i++) {                   // Percorre os produtos ja cadastrados
+        if (comparar(v[i].nome, novo.nome) == 0) {          // Se o nome for igual (ignorando maiusculas)...
+            printf("Esse produto ja esta cadastrado!\n");   // ...avisa que e duplicado
+            return;                             // ...e cancela
+        }                                       // Fim do if
+        if (v[i].id > maior) {                  // Se este ID for maior que o maior visto ate agora...
+            maior = v[i].id;                    // ...guarda como novo maior
+        }                                       // Fim do if
+    }                                           // Fim do for
+    novo.id = maior + 1;                        // ID automatico incremental (maior existente + 1)
+
+    arq = fopen("produtos.txt", "a");           // Modo "a" (append) adiciona no final do arquivo
+    if (arq == NULL) {                          // Se nao conseguiu abrir...
+        printf("Erro ao abrir o arquivo!\n");   // ...avisa o erro
+        return;                                 // ...e cancela
+    }                                           // Fim do if
+    fprintf(arq, "%d;%s;%s;%.2f;%d;%s\n", novo.id, novo.nome, novo.categoria,   // Grava uma linha com os campos separados por ';'
+            novo.preco, novo.quantidade, novo.fornecedor);  // Continuacao dos campos gravados
+    fclose(arq);                                // Fecha o arquivo
+    printf("Produto cadastrado com o ID %d!\n", novo.id);   // Informa o ID gerado
+}                                               // Fim da funcao inserirProduto
+
+void listarProdutos() {                         // Funcao do menu opcao 3
+    Produto v[MAX];                             // Vetor para guardar os produtos lidos
+    int n = carregarProdutos(v);                // Carrega do arquivo e guarda a quantidade
+    if (n == 0) {                               // Se nao ha produtos...
+        printf("Nenhum produto cadastrado.\n"); // ...avisa
+        return;                                 // ...e sai
+    }                                           // Fim do if
+    mostrarProdutos(v, n);                      // Exibe a tabela de produtos
+}                                               // Fim da funcao listarProdutos
+
+void alterarProduto() {                         // Funcao do menu opcao 4
+    Produto v[MAX];                             // Vetor com todos os produtos
+    int n = carregarProdutos(v), i, pos;        // n = quantidade; i = contador; pos = posicao do produto escolhido
+    Produto *p;                                 // Ponteiro para editar o produto escolhido direto no vetor
+    char nome[50];                              // Guarda o novo nome ate validar
+
+    printf("ID do produto: ");                  // Pede o ID do produto a alterar
+    pos = acharProduto(v, n, lerInt());         // Le o ID e procura a posicao dele no vetor
+    if (pos == -1) {                            // Se nao achou...
+        printf("Produto nao encontrado!\n");    // ...avisa
+        return;                                 // ...e sai
+    }                                           // Fim do if
+    p = &v[pos];                                // O ponteiro passa a apontar para o produto encontrado
+
+    printf("Novo nome: ");                      // Pede o novo nome
+    lerTexto(nome, 50);                         // Le o novo nome na variavel temporaria
+    for (i = 0; i < n; i++) {                   // Percorre todos os produtos para checar duplicidade
+        if (i != pos && comparar(v[i].nome, nome) == 0) {   // Se OUTRO produto (i != pos) ja tem esse nome...
+            printf("Ja existe outro produto com esse nome!\n"); // ...avisa
+            return;                             // ...e cancela
+        }                                       // Fim do if
+    }                                           // Fim do for
+    printf("Nova categoria: ");                 // Pede a nova categoria
+    lerTexto(p->categoria, 30);                 // Le direto na categoria do produto (via ponteiro)
+    printf("Novo fornecedor: ");                // Pede o novo fornecedor
+    lerTexto(p->fornecedor, 40);                // Le direto no fornecedor do produto
+    if (strlen(nome) == 0 || strlen(p->categoria) == 0 || strlen(p->fornecedor) == 0) {     // Se algum campo de texto estiver vazio...
+        printf("Campos nao podem ficar vazios!\n");     // ...avisa
+        return;                                 // ...e cancela sem salvar (o arquivo nao foi alterado ainda)
+    }                                           // Fim do if
+    strcpy(p->nome, nome);                      // Copia o novo nome validado para o produto
+    printf("Novo preco: ");                     // Pede o novo preco
+    p->preco = lerFloat();                      // Le e grava o preco no produto
+    printf("Nova quantidade: ");                // Pede a nova quantidade
+    p->quantidade = lerInt();                   // Le e grava a quantidade no produto
+
+    salvarProdutos(v, n);                       // Grava as mudancas usando arquivo temporario
+    printf("Produto alterado com sucesso!\n");  // Informa o sucesso
+}                                               // Fim da funcao alterarProduto
+
+void excluirProduto() {                         // Funcao do menu opcao 5
+    Produto v[MAX];                             // Vetor com todos os produtos
+    int n = carregarProdutos(v), i, pos;        // n = quantidade; i = contador; pos = posicao a excluir
+
+    printf("ID do produto: ");                  // Pede o ID do produto a excluir
+    pos = acharProduto(v, n, lerInt());         // Le o ID e procura a posicao
+    if (pos == -1) {                            // Se nao achou...
+        printf("Produto nao encontrado!\n");    // ...avisa
+        return;                                 // ...e sai
+    }                                           // Fim do if
+    // Desloca os elementos seguintes para cobrir a posicao excluida
+    for (i = pos; i < n - 1; i++) {             // Do ponto excluido ate o penultimo elemento
+        v[i] = v[i + 1];                        // Copia o proximo elemento para a posicao atual
+    }                                           // Fim do for
+    salvarProdutos(v, n - 1);                   // Salva o vetor reduzindo o tamanho em 1
+    printf("Produto excluido!\n");              // Informa o sucesso
+}                                               // Fim da funcao excluirProduto
+
+void buscarProduto() {                          // Funcao do menu opcao 6
+    Produto v[MAX];                             // Vetor com todos os produtos
+    int n = carregarProdutos(v), i, tipo, achou = 0;    // n = quantidade; i = contador; tipo = campo de busca; achou = quantos encontrados
+    char busca[50];                             // Texto digitado para pesquisar
+
+    printf("Buscar por: 1 - nome | 2 - categoria | 3 - fornecedor: ");  // Mostra as opcoes de busca
+    tipo = lerInt();                            // Le a opcao escolhida
+    printf("Digite o texto de busca: ");        // Pede o texto a procurar
+    lerTexto(busca, 50);                        // Le o texto de busca
+
+    for (i = 0; i < n; i++) {                   // Percorre todos os produtos
+        if ((tipo == 1 && contem(v[i].nome, busca)) ||          // Se busca por nome e o nome contem o texto, OU...
+            (tipo == 2 && contem(v[i].categoria, busca)) ||     // ...busca por categoria e a categoria contem o texto, OU...
+            (tipo == 3 && contem(v[i].fornecedor, busca))) {    // ...busca por fornecedor e o fornecedor contem o texto
+            if (achou == 0) {                   // Se for o primeiro encontrado...
+                cabecalhoProdutos();            // ...imprime o cabecalho da tabela uma unica vez
+            }                                   // Fim do if
+            linhaProduto(&v[i]);                // Imprime a linha do produto encontrado
+            achou++;                            // Conta mais um encontrado
+        }                                       // Fim do if
+    }                                           // Fim do for
+    if (achou == 0) {                           // Se nenhum produto foi encontrado...
+        printf("Nenhum produto encontrado.\n"); // ...avisa
+    }                                           // Fim do if
+}                                               // Fim da funcao buscarProduto
+
+// ---------------------------------------------------------
+// ALGORITMO DE ORDENACAO: BUBBLE SORT
+// ---------------------------------------------------------
+void bubbleSort(Produto *v, int n, int criterio) {     // Ordena o vetor v de n produtos conforme o criterio (1 a 4)
+    int i, j, trocar;                           // i = rodada; j = posicao comparada; trocar = decide se troca (1) ou nao (0)
+    Produto aux;                                // Variavel auxiliar para realizar a troca de dois produtos
+
+    // O algoritmo da bolha compara elementos vizinhos e empurra os maiores/menores para o fim
+    for (i = 0; i < n - 1; i++) {               // Repete n-1 rodadas completas
+        for (j = 0; j < n - 1 - i; j++) {       // Compara pares vizinhos (a cada rodada o ultimo ja esta no lugar, por isso "- i")
+            if (criterio == 1) trocar = comparar(v[j].nome, v[j + 1].nome) > 0;         // Criterio 1 (A-Z): troca se o atual vier depois do proximo
+            else if (criterio == 2) trocar = comparar(v[j].nome, v[j + 1].nome) < 0;    // Criterio 2 (Z-A): troca se o atual vier antes do proximo
+            else if (criterio == 3) trocar = v[j].preco > v[j + 1].preco;               // Criterio 3 (menor -> maior): troca se o atual for mais caro
+            else trocar = v[j].preco < v[j + 1].preco;                                  // Criterio 4 (maior -> menor): troca se o atual for mais barato
+
+            if (trocar) {                       // Se precisa trocar, realiza a troca fisica na memoria RAM
+                aux = v[j];                     // Guarda o produto atual na variavel auxiliar
+                v[j] = v[j + 1];                // Coloca o proximo produto na posicao atual
+                v[j + 1] = aux;                 // Coloca o produto guardado na posicao seguinte
+            }                                   // Fim do if
+        }                                       // Fim do for interno
+    }                                           // Fim do for externo
+}                                               // Fim da funcao bubbleSort
+
+void ordenarProdutos() {                        // Funcao do menu opcao 7
+    Produto v[MAX];                             // Vetor com os produtos
+    int n = carregarProdutos(v), criterio;      // n = quantidade; criterio = tipo de ordenacao escolhido
+
+    if (n == 0) {                               // Se nao ha produtos...
+        printf("Nenhum produto cadastrado.\n"); // ...avisa
+        return;                                 // ...e sai
+    }                                           // Fim do if
+    printf("1 - Nome A-Z\n2 - Nome Z-A\n3 - Preco menor -> maior\n4 - Preco maior -> menor\n");  // Mostra as opcoes de ordenacao
+    printf("Ordenar por criterio: ");           // Pede a escolha
+    criterio = lerInt();                        // Le a opcao
+    if (criterio < 1 || criterio > 4) {         // Se a opcao estiver fora de 1 a 4...
+        printf("Opcao invalida!\n");            // ...avisa
+        return;                                 // ...e sai
+    }                                           // Fim do if
+    bubbleSort(v, n, criterio);                 // Executa o Bubble Sort
+    mostrarProdutos(v, n);                      // Mostra ordenado apenas na tela (o arquivo original nao muda)
+}                                               // Fim da funcao ordenarProdutos
+
+void exportarCSV() {                            // Funcao do menu opcao 8
+    Produto v[MAX];                             // Vetor com os produtos
+    int n = carregarProdutos(v), i;             // n = quantidade; i = contador
+    FILE *csv = fopen("produtos.csv", "w");     // Cria/abre produtos.csv para escrita
+
+    if (csv == NULL) {                          // Se nao conseguiu criar o arquivo...
+        printf("Erro ao criar o CSV!\n");       // ...avisa
+        return;                                 // ...e sai
+    }                                           // Fim do if
+    fprintf(csv, "id,nome,categoria,preco,quantidade,fornecedor\n");    // Escreve a primeira linha com os nomes das colunas
+    for (i = 0; i < n; i++) {                   // Percorre todos os produtos
+        fprintf(csv, "%d,\"%s\",\"%s\",%.2f,%d,\"%s\"\n", v[i].id, v[i].nome, v[i].categoria,   // Escreve uma linha CSV (virgula separa; aspas protegem textos)
+                v[i].preco, v[i].quantidade, v[i].fornecedor);  // Continuacao dos campos
+    }                                           // Fim do for
+    fclose(csv);                                // Fecha o CSV
+    printf("Arquivo 'produtos.csv' gerado com sucesso!\n");     // Informa o sucesso
+}                                               // Fim da funcao exportarCSV
+
+// ---------------------------------------------------------
+// FUNCOES DE CLIENTES
+// ---------------------------------------------------------
+
+void inserirCliente() {                         // Funcao do menu opcao 9
+    Cliente v[MAX], novo;                       // Vetor com clientes existentes e variavel do novo cliente
+    int n = carregarClientes(v), i, maior = 0;  // n = quantidade; i = contador; maior = maior ID encontrado
+    FILE *arq;                                  // Ponteiro para o arquivo
+
+    if (n >= MAX) {                             // Se o vetor ja esta cheio...
+        printf("Limite de clientes atingido!\n");   // ...avisa
+        return;                                 // ...e cancela
+    }                                           // Fim do if
+    printf("Nome: ");                           // Pede o nome
+    lerTexto(novo.nome, 50);                    // Le o nome
+    printf("Telefone: ");                       // Pede o telefone
+    lerTexto(novo.telefone, 20);                // Le o telefone
+    if (strlen(novo.nome) == 0 || strlen(novo.telefone) == 0) {     // Se nome OU telefone estiverem vazios...
+        printf("Nome e telefone nao podem ficar vazios!\n");        // ...avisa
+        return;                                 // ...e cancela
+    }                                           // Fim do if
+    for (i = 0; i < n; i++) {                   // Percorre os clientes ja cadastrados
+        if (comparar(v[i].nome, novo.nome) == 0) {          // Se o nome ja existe (ignorando maiusculas)...
+            printf("Esse cliente ja esta cadastrado!\n");   // ...avisa
+            return;                             // ...e cancela
+        }                                       // Fim do if
+        if (v[i].id > maior) {                  // Se este ID for o maior visto ate agora...
+            maior = v[i].id;                    // ...guarda como maior
+        }                                       // Fim do if
+    }                                           // Fim do for
+    novo.id = maior + 1;                        // ID automatico: maior existente + 1
+
+    arq = fopen("clientes.txt", "a");           // Abre o arquivo em modo append (adiciona no final)
+    if (arq == NULL) {                          // Se nao conseguiu abrir...
+        printf("Erro ao abrir o arquivo!\n");   // ...avisa
+        return;                                 // ...e cancela
+    }                                           // Fim do if
+    fprintf(arq, "%d;%s;%s\n", novo.id, novo.nome, novo.telefone);  // Grava uma linha: id;nome;telefone
+    fclose(arq);                                // Fecha o arquivo
+    printf("Cliente cadastrado com o ID %d!\n", novo.id);   // Informa o ID gerado
+}                                               // Fim da funcao inserirCliente
+
+void listarClientes() {                         // Funcao do menu opcao 10
+    Cliente v[MAX];                             // Vetor para os clientes
+    int n = carregarClientes(v), i;             // n = quantidade lida; i = contador
+
+    if (n == 0) {                               // Se nao ha clientes...
+        printf("Nenhum cliente cadastrado.\n"); // ...avisa
+        return;                                 // ...e sai
+    }                                           // Fim do if
+    printf("\n%-5s %-25s %-15s\n", "ID", "NOME", "TELEFONE");   // Imprime o cabecalho da tabela
+    printf("----------------------------------------------\n"); // Linha separadora
+    for (i = 0; i < n; i++) {                   // Percorre todos os clientes
+        printf("%-5d %-25.25s %-15.15s\n", v[i].id, v[i].nome, v[i].telefone);  // Imprime uma linha por cliente
+    }                                           // Fim do for
+    printf("\nTotal: %d cliente(s)\n", n);      // Mostra o total de clientes
+}                                               // Fim da funcao listarClientes
+
+// ---------------------------------------------------------
+// HISTORICO DE COMPRAS E INTEGRACAO DE ESTOQUE
+// ---------------------------------------------------------
+
+void registrarCompra() {                        // Funcao do menu opcao 11
+    Produto p[MAX];                             // Vetor com os produtos
+    Cliente c[MAX];                             // Vetor com os clientes
+    Compra h[MAX], nova;                        // Vetor com o historico e a variavel da nova compra
+    int np = carregarProdutos(p), nc = carregarClientes(c), nh = carregarCompras(h);    // Carrega os 3 arquivos e guarda as quantidades
+    int i, idCliente, posCliente = -1, posProduto, qtd, maior = 0;  // Variaveis auxiliares (posCliente = -1 significa "nao achado")
+    Produto *prod;                              // Ponteiro para o produto escolhido
+    FILE *arq;                                  // Ponteiro para o arquivo de historico
+
+    printf("ID do cliente: ");                  // Pede o ID do cliente
+    idCliente = lerInt();                       // Le o ID
+    for (i = 0; i < nc; i++) {                  // Percorre os clientes
+        if (c[i].id == idCliente) {             // Se o ID bate...
+            posCliente = i;                     // ...guarda a posicao do cliente
+        }                                       // Fim do if
+    }                                           // Fim do for
+    if (posCliente == -1) {                     // Se nao achou o cliente...
+        printf("Cliente nao encontrado!\n");    // ...avisa
+        return;                                 // ...e cancela
+    }                                           // Fim do if
+
+    printf("ID do produto: ");                  // Pede o ID do produto
+    posProduto = acharProduto(p, np, lerInt()); // Le o ID e procura a posicao do produto
+    if (posProduto == -1) {                     // Se nao achou o produto...
+        printf("Produto nao encontrado!\n");    // ...avisa
+        return;                                 // ...e cancela
+    }                                           // Fim do if
+    prod = &p[posProduto];                      // O ponteiro aponta para o produto escolhido
+    printf("Produto: %s | Preco: R$ %.2f | Estoque disponivel: %d\n", prod->nome, prod->preco, prod->quantidade);   // Mostra nome, preco e estoque
+
+    printf("Quantidade desejada: ");            // Pede a quantidade
+    qtd = lerInt();                             // Le a quantidade
+    if (qtd <= 0 || qtd > prod->quantidade) {   // Se for zero/negativa ou maior que o estoque...
+        printf("Quantidade invalida ou estoque insuficiente!\n");   // ...avisa
+        return;                                 // ...e cancela
+    }                                           // Fim do if
+
+    // Calcula ID do historico
+    for (i = 0; i < nh; i++) {                  // Percorre as compras ja registradas
+        if (h[i].id > maior) {                  // Se este ID for o maior visto ate agora...
+            maior = h[i].id;                    // ...guarda como maior
+        }                                       // Fim do if
+    }                                           // Fim do for
+    nova.id = maior + 1;                        // ID da nova compra: maior + 1
+    strcpy(nova.cliente, c[posCliente].nome);   // Copia o nome do cliente para a compra
+    strcpy(nova.produto, prod->nome);           // Copia o nome do produto para a compra
+    nova.quantidade = qtd;                      // Guarda a quantidade comprada
+    nova.total = qtd * prod->preco;             // Calcula o total: quantidade x preco unitario
+
+    // Grava no arquivo de historico
+    arq = fopen("historico.txt", "a");          // Abre o historico em modo append
+    if (arq == NULL) {                          // Se nao conseguiu abrir...
+        printf("Erro ao abrir o historico!\n"); // ...avisa
+        return;                                 // ...e cancela
+    }                                           // Fim do if
+    fprintf(arq, "%d;%s;%s;%d;%.2f\n", nova.id, nova.cliente, nova.produto, nova.quantidade, nova.total);   // Grava a compra: id;cliente;produto;qtd;total
+    fclose(arq);                                // Fecha o arquivo
+
+    // Atualiza o estoque do produto baixando a quantidade vendida
+    prod->quantidade = prod->quantidade - qtd;  // Subtrai a quantidade vendida do estoque (na memoria)
+    salvarProdutos(p, np);                      // Atualiza o arquivo de produtos com o novo estoque
+    printf("Compra registrada com sucesso! Total: R$ %.2f\n", nova.total);  // Mostra o total da compra
+}                                               // Fim da funcao registrarCompra
+
+void listarHistorico() {                        // Funcao do menu opcao 12
+    Compra v[MAX];                              // Vetor para as compras
+    int n = carregarCompras(v), i;              // n = quantidade lida; i = contador
+    float soma = 0;                             // Acumulador do faturamento total
+
+    if (n == 0) {                               // Se nao ha compras...
+        printf("Nenhuma compra registrada.\n"); // ...avisa
+        return;                                 // ...e sai
+    }                                           // Fim do if
+    printf("\n%-5s %-20s %-20s %5s %10s\n", "ID", "CLIENTE", "PRODUTO", "QTD", "TOTAL");    // Imprime o cabecalho da tabela
+    printf("-----------------------------------------------------------\n");   // Linha separadora
+    for (i = 0; i < n; i++) {                   // Percorre todas as compras
+        printf("%-5d %-20.20s %-20.20s %5d %10.2f\n", v[i].id, v[i].cliente, v[i].produto,  // Imprime id, cliente e produto da compra
+               v[i].quantidade, v[i].total);    // Imprime quantidade e total da compra
+        soma = soma + v[i].total;               // Soma o total desta compra ao faturamento
+    }                                           // Fim do for
+    printf("\nTotal de %d compra(s) | Faturamento total: R$ %.2f\n", n, soma);  // Mostra a quantidade de compras e o faturamento
+}                                               // Fim da funcao listarHistorico
+
+// ---------------------------------------------------------
+// FUNCAO PRINCIPAL (MENU DE NAVEGACAO)
+// ---------------------------------------------------------
+int main() {                                    // Ponto de entrada: o programa comeca aqui
+    int opcao;                                  // Guarda a opcao escolhida no menu
+
+    do {                                        // Repete o menu ate o usuario escolher 0
+        printf("\n===== SISTEMA DE LOJA =====\n");    // Titulo do menu
+        printf("1  - Criar arquivos       -> Cria os 3 arquivos txt vazios\n");                 // Opcao 1
+        printf("2  - Inserir produto      -> Cadastra um produto (ID automatico)\n");           // Opcao 2
+        printf("3  - Listar produtos      -> Mostra todos em tabela formatada\n");              // Opcao 3
+        printf("4  - Alterar produto      -> Muda os dados pelo ID\n");                         // Opcao 4
+        printf("5  - Excluir produto      -> Remove do arquivo pelo ID\n");                     // Opcao 5
+        printf("6  - Buscar produto       -> Busca por nome, categoria ou fornecedor\n");       // Opcao 6
+        printf("7  - Ordenar produtos     -> Usa Bubble Sort (nao altera o arquivo)\n");        // Opcao 7
+        printf("8  - Exportar CSV         -> Gera arquivo 'produtos.csv'\n");                   // Opcao 8
+        printf("9  - Inserir cliente      -> Cadastra cliente (ID automatico)\n");              // Opcao 9
+        printf("10 - Listar clientes      -> Mostra todos em tabela\n");                        // Opcao 10
+        printf("11 - Registrar compra     -> Vincula cliente/produto e baixa estoque\n");       // Opcao 11
+        printf("12 - Listar historico     -> Exibe todas as vendas realizadas\n");              // Opcao 12
+        printf("0  - Sair\n");                  // Opcao 0: encerra o programa
+        printf("Escolha uma opcao: ");          // Pede a escolha ao usuario
+        opcao = lerInt();                       // Le a opcao digitada
+
+        switch (opcao) {                        // Escolhe o que fazer conforme a opcao
+            case 1:  criarArquivos();     break;    // Opcao 1: chama criarArquivos e sai do switch
+            case 2:  inserirProduto();    break;    // Opcao 2: cadastra produto
+            case 3:  listarProdutos();    break;    // Opcao 3: lista produtos
+            case 4:  alterarProduto();    break;    // Opcao 4: altera produto
+            case 5:  excluirProduto();    break;    // Opcao 5: exclui produto
+            case 6:  buscarProduto();     break;    // Opcao 6: busca produto
+            case 7:  ordenarProdutos();   break;    // Opcao 7: ordena com Bubble Sort
+            case 8:  exportarCSV();       break;    // Opcao 8: exporta para CSV
+            case 9:  inserirCliente();    break;    // Opcao 9: cadastra cliente
+            case 10: listarClientes();    break;    // Opcao 10: lista clientes
+            case 11: registrarCompra();   break;    // Opcao 11: registra compra e baixa estoque
+            case 12: listarHistorico();   break;    // Opcao 12: mostra historico de vendas
+            case 0:  printf("Encerrando o sistema...\n"); break;    // Opcao 0: mostra mensagem de saida
+            default: printf("Opcao invalida! Tente novamente.\n");  // Qualquer outro valor: avisa que e invalido
+        }                                       // Fim do switch
+    } while (opcao != 0);                       // Volta ao inicio do menu enquanto a opcao nao for 0
+
+    return 0;                                   // Retorna 0 ao sistema: programa terminou sem erros
+}                                               // Fim da funcao main
